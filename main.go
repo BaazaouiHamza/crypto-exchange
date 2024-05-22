@@ -12,6 +12,8 @@ import (
 
 func main() {
 	e := echo.New()
+	e.HTTPErrorHandler = httpErrorHandler
+
 	ex := NewExchange()
 
 	e.GET("/book/:market", ex.handleGetBook)
@@ -21,6 +23,10 @@ func main() {
 	e.Start(":3000")
 
 	fmt.Println("working")
+}
+
+func httpErrorHandler(err error, c echo.Context) {
+	fmt.Println(err)
 }
 
 type OrderType string
@@ -116,33 +122,15 @@ func (ex *Exchange) handleGetBook(c echo.Context) error {
 func (ex *Exchange) cancelOrder(c echo.Context) error {
 	id, _ := strconv.Atoi(c.Param("id"))
 	ob := ex.orderbooks[MarketEth]
-	orderCancelled := false
-	for _, limit := range ob.Asks() {
-		for _, order := range limit.Orders {
-			if order.ID == int64(id) {
-				ob.CancelOrder(order)
-				orderCancelled = true
-			}
-			if orderCancelled {
-				return c.JSON(http.StatusOK, map[string]any{"msg": "order canceled"})
-			}
-		}
-	}
+	ob.CancelOrder(ob.Orders[int64(id)])
 
-	for _, limit := range ob.Bids() {
-		for _, order := range limit.Orders {
-			if order.ID == int64(id) {
-				ob.CancelOrder(order)
-				orderCancelled = true
-			}
+	return c.JSON(http.StatusOK, map[string]any{"msg": "order deleted"})
+}
 
-			if orderCancelled {
-				return c.JSON(http.StatusOK, map[string]any{"msg": "order canceled"})
-			}
-		}
-	}
-
-	return nil
+type MatchedOrders struct {
+	Price float64
+	Size  float64
+	ID    int64
 }
 
 func (ex *Exchange) handlePlaceOrder(c echo.Context) error {
@@ -163,7 +151,25 @@ func (ex *Exchange) handlePlaceOrder(c echo.Context) error {
 
 	if placeOrderData.Type == MarketOrder {
 		matches := ob.PlaceMarketOrder(order)
-		return c.JSON(200, map[string]any{"matches": len(matches)})
+		matchedOrders := make([]*MatchedOrders, len(matches))
+
+		isBid := false
+		if order.Bid {
+			isBid = true
+		}
+
+		for i := 0; i < len(matchedOrders); i++ {
+			id := matches[i].Bid.ID
+			if isBid {
+				id = matches[i].Ask.ID
+			}
+			matchedOrders[i] = &MatchedOrders{
+				Size:  matches[i].SizeFilled,
+				Price: matches[i].Price,
+				ID:    id,
+			}
+		}
+		return c.JSON(200, map[string]any{"matches": matchedOrders})
 	}
 
 	return nil
