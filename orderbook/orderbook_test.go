@@ -1,4 +1,4 @@
-package main
+package orderbook
 
 import (
 	"fmt"
@@ -35,7 +35,7 @@ func TestPlaceLimitOrder(t *testing.T) {
 	ob.PlaceLimitOrder(10_000, sellOrderA)
 	ob.PlaceLimitOrder(9_000, sellOrderB)
 
-	assert(t, len(ob.asks), 1)
+	assert(t, len(ob.asks), 2)
 }
 
 func TestPlaceMarketOrder(t *testing.T) {
