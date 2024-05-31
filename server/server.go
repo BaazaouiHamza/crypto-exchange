@@ -112,8 +112,13 @@ func StartServer() {
 
 	fmt.Println("john balance:", johnBalance)
 
-	e.GET("/book/:market", ex.handleGetBook)
 	e.POST("/order", ex.handlePlaceOrder)
+
+	e.GET("/book/:market/ask", ex.handleGetBook)
+	e.GET("/book/:market", ex.handleGetBook)
+	e.GET("/book/:market/bid", ex.handleGetBestBid)
+	e.GET("/book/:market/ask", ex.handleGetBestAsk)
+
 	e.DELETE("/order/:id", ex.cancelOrder)
 
 	e.Start(":3000")
@@ -210,6 +215,38 @@ func (ex *Exchange) handleGetBook(c echo.Context) error {
 		}
 	}
 	return c.JSON(http.StatusOK, orderBookData)
+}
+
+type PriceResponse struct {
+	Price float64
+}
+
+func (ex *Exchange) handleGetBestBid(c echo.Context) error {
+	market := Market(c.Param("market"))
+	ob := ex.orderbooks[market]
+	if len(ob.Bids()) == 0 {
+		return fmt.Errorf("the bids are empty")
+	}
+	bestBidPrice := ob.Bids()[0].Price
+	pr := PriceResponse{
+		Price: bestBidPrice,
+	}
+
+	return c.JSON(http.StatusOK, pr)
+}
+
+func (ex *Exchange) handleGetBestAsk(c echo.Context) error {
+	market := Market(c.Param("market"))
+	ob := ex.orderbooks[market]
+	if len(ob.Asks()) == 0 {
+		return fmt.Errorf("the asks are empty")
+	}
+	bestAskPrice := ob.Asks()[0].Price
+	pr := PriceResponse{
+		Price: bestAskPrice,
+	}
+
+	return c.JSON(http.StatusOK, pr)
 }
 
 func (ex *Exchange) cancelOrder(c echo.Context) error {
