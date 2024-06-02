@@ -58,9 +58,10 @@ type (
 	}
 
 	MatchedOrders struct {
-		Price float64
-		Size  float64
-		ID    int64
+		UserID int64
+		Price  float64
+		Size   float64
+		ID     int64
 	}
 )
 
@@ -114,6 +115,7 @@ func StartServer() {
 
 	e.POST("/order", ex.handlePlaceOrder)
 
+	e.GET("/order/:userID", ex.handleGetOrders)
 	e.GET("/book/:market/ask", ex.handleGetBook)
 	e.GET("/book/:market", ex.handleGetBook)
 	e.GET("/book/:market/bid", ex.handleGetBestBid)
@@ -148,9 +150,10 @@ func httpErrorHandler(err error, c echo.Context) {
 }
 
 type Exchange struct {
-	Client     *ethclient.Client
-	Users      map[int64]*User
-	orders     map[int64]int64
+	Client *ethclient.Client
+	Users  map[int64]*User
+	// Orders maps a user to his orders.
+	Orders     map[int64][]*orderbook.Order
 	PrivateKey *ecdsa.PrivateKey
 	orderbooks map[Market]*orderbook.Orderbook
 }
@@ -167,10 +170,33 @@ func NewExchange(privateKey string, client *ethclient.Client) (*Exchange, error)
 	return &Exchange{
 		Client:     client,
 		Users:      make(map[int64]*User),
-		orders:     make(map[int64]int64),
+		Orders:     make(map[int64][]*orderbook.Order),
 		PrivateKey: pk,
 		orderbooks: orderbooks,
 	}, nil
+}
+
+func (ex *Exchange) handleGetOrders(c echo.Context) error {
+	userID, err := strconv.Atoi(c.Param("userID"))
+	if err != nil {
+		return err
+	}
+
+	orderbooksOrders := ex.Orders[int64(userID)]
+	orders := make([]Order, len(orderbooksOrders))
+
+	for i := 0; i < len(orderbooksOrders); i++ {
+		order := Order{
+			ID:     orderbooksOrders[i].ID,
+			UserID: orderbooksOrders[i].UserID,
+			// Price:     orderbooksOrders[i].Limit.Price,
+			Size:      orderbooksOrders[i].Size,
+			Timestamp: orderbooksOrders[i].Timestamp,
+			Bid:       orderbooksOrders[i].Bid,
+		}
+		orders[i] = order
+	}
+	return c.JSON(http.StatusOK, orders)
 }
 
 func (ex *Exchange) handleGetBook(c echo.Context) error {
@@ -273,13 +299,16 @@ func (ex *Exchange) handlePlaceMarketOrder(market Market, order *orderbook.Order
 	sumPrice := 0.0
 	for i := 0; i < len(matchedOrders); i++ {
 		id := matches[i].Bid.ID
+		limitUserID := matches[i].Bid.UserID
 		if isBid {
+			limitUserID = matches[i].Ask.UserID
 			id = matches[i].Ask.ID
 		}
 		matchedOrders[i] = &MatchedOrders{
-			Size:  matches[i].SizeFilled,
-			Price: matches[i].Price,
-			ID:    id,
+			UserID: limitUserID,
+			Size:   matches[i].SizeFilled,
+			Price:  matches[i].Price,
+			ID:     id,
 		}
 		totalSizeFilled += matches[i].SizeFilled
 		sumPrice += matches[i].Price
@@ -295,6 +324,9 @@ func (ex *Exchange) handlePlaceMarketOrder(market Market, order *orderbook.Order
 func (ex *Exchange) handlePlaceLimitOrder(market Market, price float64, order *orderbook.Order) error {
 	ob := ex.orderbooks[market]
 	ob.PlaceLimitOrder(price, order)
+
+	// keep track of the user orders
+	ex.Orders[order.UserID] = append(ex.Orders[order.UserID], order)
 
 	log.Printf("new LIMIT order => [%t] price [%.2f] | size [%.2f]", order.Bid, order.Limit.Price, order.Size)
 
@@ -315,20 +347,21 @@ func (ex *Exchange) handlePlaceOrder(c echo.Context) error {
 	market := Market(placeOrderData.Market)
 	order := orderbook.NewOrder(placeOrderData.Bid, placeOrderData.Size, placeOrderData.UserID)
 
+	// limit orders
 	if placeOrderData.Type == LimitOrder {
 		if err := ex.handlePlaceLimitOrder(market, placeOrderData.Price, order); err != nil {
 			return err
 		}
 	}
 
+	// market orders
 	if placeOrderData.Type == MarketOrder {
 		matches, _ := ex.handlePlaceMarketOrder(market, order)
-
 		if err := ex.handleMatches(matches); err != nil {
 			return err
 		}
-
 	}
+
 	resp := &PlaceOrderResponse{
 		OrderID: order.ID,
 	}
