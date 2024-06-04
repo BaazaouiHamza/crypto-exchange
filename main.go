@@ -23,10 +23,19 @@ func marketOrderPlacer(c *client.Client) {
 
 	for {
 
+		trades, err := c.GetTrades("ETH")
+		if err != nil {
+			panic(err)
+		}
+
+		if len(trades) > 0 {
+			fmt.Printf("exchange price => %.2f\n", trades[len(trades)-1].Price)
+		}
+
 		otherMarketSellOrder := &client.PlaceOrderParams{
 			UserID: 8,
 			Bid:    false,
-			Size:   5000,
+			Size:   1000,
 		}
 		askOrderResp, err := c.PlaceMArketOrder(otherMarketSellOrder)
 		if err != nil {
@@ -36,7 +45,7 @@ func marketOrderPlacer(c *client.Client) {
 		marketSellOrder := &client.PlaceOrderParams{
 			UserID: 666,
 			Bid:    false,
-			Size:   3000,
+			Size:   100,
 		}
 		askOrderResp, err = c.PlaceMArketOrder(marketSellOrder)
 		if err != nil {
@@ -46,7 +55,7 @@ func marketOrderPlacer(c *client.Client) {
 		marketBuyOrder := &client.PlaceOrderParams{
 			UserID: 666,
 			Bid:    true,
-			Size:   1000,
+			Size:   100,
 		}
 		bidOrderResp, err := c.PlaceMArketOrder(marketBuyOrder)
 		if err != nil {

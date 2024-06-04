@@ -64,6 +64,10 @@ type (
 		Size   float64
 		ID     int64
 	}
+
+	APIError struct {
+		Error string
+	}
 )
 
 func StartServer() {
@@ -116,6 +120,7 @@ func StartServer() {
 
 	e.POST("/order", ex.handlePlaceOrder)
 
+	e.GET("/trades/:market", ex.handleGetTrades)
 	e.GET("/order/:userID", ex.handleGetOrders)
 	e.GET("/book/:market/ask", ex.handleGetBook)
 	e.GET("/book/:market", ex.handleGetBook)
@@ -176,6 +181,16 @@ func NewExchange(privateKey string, client *ethclient.Client) (*Exchange, error)
 		PrivateKey: pk,
 		orderbooks: orderbooks,
 	}, nil
+}
+
+func (ex *Exchange) handleGetTrades(c echo.Context) error {
+	market := Market(c.Param("market"))
+	ob, ok := ex.orderbooks[market]
+	if !ok {
+		return c.JSON(http.StatusBadRequest, APIError{Error: "orderbook not found"})
+	}
+
+	return c.JSON(http.StatusOK, ob.Trades)
 }
 
 type GetOrderResponse struct {
